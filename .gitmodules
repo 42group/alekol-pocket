@@ -1,0 +1,6 @@
+[submodule "components/ESP8266-RTOS-SSD1306"]
+	path = components/ESP8266-RTOS-SSD1306
+	url = https://github.com/Fonger/ESP8266-RTOS-SSD1306.git
+[submodule "components/ESP8266-RTOS-FONTS"]
+	path = components/ESP8266-RTOS-FONTS
+	url = https://github.com/Fonger/ESP8266-RTOS-FONTS.git
