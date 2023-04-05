@@ -1,7 +1,7 @@
 #include <stdio.h>
+#include <string.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
-#include <ssd1306/ssd1306.h>
 #include <driver/i2c.h>
 #include <esp_err.h>
 #include <esp_log.h>
@@ -9,20 +9,73 @@
 
 static const char* TAG = "SSD1306";
 
-void        clear_display(ssd1306_t *dev, uint8_t *frame_buffer)
+void    set_cursor(t_display *display, const uint8_t x, const uint8_t y)
 {
-    ssd1306_fill_rectangle(dev, frame_buffer, 0, 0, DISPLAY_WIDTH,
-                           DISPLAY_HEIGHT, OLED_COLOR_BLACK);
+    display->cursor.x = x;
+    display->cursor.y = y;
 }
 
-ssd1306_t	*init_display(uint8_t width, uint8_t height,
+void    refresh_display(t_display *display)
+{
+    ssd1306_load_frame_buffer(&display->dev, display->buffer);
+}
+
+void        clear_display_buffer(t_display *display, uint8_t from_x)
+{
+    ssd1306_fill_rectangle(&display->dev, display->buffer, from_x, 0, DISPLAY_WIDTH - from_x,
+                           DISPLAY_HEIGHT, OLED_COLOR_BLACK);
+    set_cursor(display, from_x + 5, 0);
+}
+
+void        clear_display(t_display *display, uint8_t from_x)
+{
+    clear_display_buffer(display, from_x);
+}
+
+void    display_print(t_display *display, const char *str)
+{
+    ssd1306_draw_string(&display->dev, display->buffer, display->font,
+                        display->cursor.x, display->cursor.y,
+                        str, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+    display->cursor.x += font_measure_string(display->font, str);
+}
+
+void    display_println(t_display *display, const char *str)
+{
+    ssd1306_draw_string(&display->dev, display->buffer, display->font,
+                        display->cursor.x, display->cursor.y,
+                        str, OLED_COLOR_WHITE, OLED_COLOR_BLACK);
+    display->cursor.x = 35;
+    display->cursor.y += display->font->height + 3;
+}
+
+void drawBitmap(t_display *display, int8_t x, int8_t y, const uint8_t bitmap[],
+                              int8_t w, int8_t h, ssd1306_color_t color) {
+
+  int8_t byteWidth = (w + 7) / 8; // Bitmap scanline pad = whole byte
+  uint8_t b = 0;
+
+  for (int8_t j = 0; j < h; j++, y++) {
+    for (int8_t i = 0; i < w; i++) {
+      if (i & 7)
+        b <<= 1;
+      else
+        b = bitmap[j * byteWidth + i / 8];
+      if (b & 0x80)
+        ssd1306_draw_pixel(&display->dev, display->buffer, x + i, y, color);
+    }
+  }
+}
+
+
+t_display	*init_display(uint8_t width, uint8_t height,
                         uint8_t scl_pin, uint8_t sda_pin)
 {
     i2c_config_t	conf;
     int			    i2c_master_port;
-    ssd1306_t	    *dev;
+    t_display	    *display;
 
-    if (!(dev = malloc(sizeof(*dev)))) {
+    if (!(display = malloc(sizeof(*display)))) {
         ESP_LOGE(TAG, "%s: failed to allocate memory", __func__);
         return (NULL);
     }
@@ -37,18 +90,21 @@ ssd1306_t	*init_display(uint8_t width, uint8_t height,
     ESP_ERROR_CHECK(i2c_driver_install(i2c_master_port, conf.mode));
     ESP_ERROR_CHECK(i2c_param_config(i2c_master_port, &conf));
 
-    dev->i2c_port = i2c_master_port;
-    dev->i2c_addr = SSD1306_I2C_ADDR_0;
-    dev->screen = SSD1306_SCREEN;
-    dev->width = width;
-    dev->height = height;
+    display->dev.i2c_port = i2c_master_port;
+    display->dev.i2c_addr = SSD1306_I2C_ADDR_0;
+    display->dev.screen = SSD1306_SCREEN;
+    display->dev.width = width;
+    display->dev.height = height;
 
-    if (ssd1306_init(dev) != 0) {
-        free(dev);
+    if (ssd1306_init(&display->dev) != 0) {
+        free(display);
         ESP_LOGE(TAG, "%s: ssd1306_init() failed", __func__);
         return (NULL);
     }
-    ssd1306_set_whole_display_lighting(dev, false);
+    set_cursor(display, 0, 0);
+    display->font = font_builtin_fonts[0];
+    ssd1306_set_whole_display_lighting(&display->dev, false);
+    clear_display_buffer(display, 0);
     ESP_LOGI(TAG, "Display successfully init");
-    return (dev);
+    return (display);
 }
